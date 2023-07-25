@@ -7,35 +7,53 @@ terraform {
   }
 }
 
-resource "aws_ecs_cluster" "my_cluster" {
-  name = "my-cluster" # Naming the cluster
+resource "aws_ecs_cluster" "cluster" {
+  name = "cluster" # Naming the cluster
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
-resource "aws_ecs_task_definition" "my_app" {
-
-  family                   = "myapp"
+resource "aws_ecs_task_definition" "task" {
+  family                   = "service"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
+  cpu                      = 512
+  memory                   = 2048
+  container_definitions    = <<DEFINITION
+  [
+      {
+            "name"      : "nginx",
+            "image"     : "nginx:1.23.1",
+            "cpu"       : 512,
+            "memory"    : 1024,
+            "essential" : true,
+            "portMappings" : [
+                    {
+                              "containerPort" : 80,
+                              "hostPort"      : 80
+                            }
+                  ]
+          }
+    ]
+  DEFINITION
+}
 
+resource "aws_ecs_service" "service" {
+  name             = "service"
+  cluster          = aws_ecs_cluster.cluster.id
+  task_definition  = aws_ecs_task_definition.task.id
+  desired_count    = 1
+  launch_type      = "FARGATE"
+  platform_version = "LATEST"
 
-  container_definitions = <<DEFINITION
-     [
-       {
-           "cpu": 256,
-           "image": "nginx:latest",
-           "memory": 512,
-           "name": "myapp",
-           "networkMode": "awsvpc",
-           "portMappings": [
-                 {
-                         "containerPort": 8080,
-                         "hostPort": 8080
-                       }
-               ]
-         }
-     ]
-         DEFINITION
-
+  network_configuration {
+    assign_public_ip = true
+    security_groups  = [aws_security_group.sg.id]
+    subnets          = [aws_subnet.subnet.id]
+  }
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
